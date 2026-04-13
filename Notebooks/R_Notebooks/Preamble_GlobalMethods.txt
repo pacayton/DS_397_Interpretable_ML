@@ -1,0 +1,100 @@
+## Preamble
+
+install.packages(c("iml", "randomForest","rpart" ,"nnet", "tidyverse", "GGally", "Metrics", "e1071", "glmnet"))
+
+library(iml)
+library(randomForest)
+library(nnet)
+library(tidyverse)
+library(GGally)
+library(Metrics)
+library(rpart)
+library(glmnet)
+
+## Penguins Dataset
+
+penguins <- read.csv("https://github.com/christophM/interpretable-ml-book/raw/refs/heads/master/data/penguins.csv")
+
+set.seed(2)
+penguins = na.omit(penguins)
+penguins$sex = as.factor(penguins$sex)
+penguins_orig = penguins
+penguins_col_selection = c('species', 'bill_depth_mm', 'bill_length_mm', 'flipper_length_mm', 'sex', 'body_mass_g') 
+penguins = penguins[penguins_col_selection] 
+penguin_train_index <- sample(1:nrow(penguins), 2/3 * nrow(penguins))
+penguins_train <- penguins[penguin_train_index, ]
+penguins_test <- penguins[-penguin_train_index, ]
+
+# Make sure P(female) is predicted
+penguins$sex <- relevel(penguins$sex, ref = "male")
+pengu_rf = randomForest(sex ~ ., data = penguins_train)
+pengu_tree = rpart(sex ~ ., data = penguins_train)
+
+# Split the data by species
+species_models <- lapply(split(penguins_train, penguins_train$species), function(data) {
+  data$species = NULL
+  # ensuring the right levels
+  data$sex <- relevel(data$sex, ref = "male")
+  glm(sex ~ ., data = data, trace = FALSE, family = binomial(link = "logit"))
+})
+
+pengu_logreg <- list(models = species_models)
+class(pengu_logreg) <- "pengu_logreg"
+
+predict.pengu_logreg <- function(object, newdata, ...) {
+  predictions <- numeric(nrow(newdata))
+  
+  for (species in names(object$models)) {
+    # Filter test data for this species
+    species_data <- newdata[newdata$species == species, ]
+    if (nrow(species_data) > 0) {
+      # Predict using the appropriate model
+      model <- object$models[[species]]
+      species_predictions <- predict(model, newdata = species_data, type = "response", ...)
+      
+      # Create temporary data frame with predictions
+      pred_df <- data.frame(
+        row_id = seq_len(nrow(newdata))[newdata$species == species],
+        pred = species_predictions
+      )
+      # Update predictions using merge matching
+      predictions[pred_df$row_id] <- pred_df$pred
+    }
+  }
+  
+  return(predictions)
+}
+
+## Bike Dataset
+
+set.seed(42)
+bike <- read.csv("https://github.com/christophM/interpretable-ml-book/raw/refs/heads/master/data/bike.csv")
+bike = na.omit(bike)
+bike_features =  c('season','holiday', 'workday', 'weather', 'temp', 'hum', 'windspeed',  "cnt_2d_bfr")
+bike = bike[c(bike_features, "cnt")]
+bike_train_index <- sample(1:nrow(bike), 2/3 * nrow(bike))
+bike_train <- bike[bike_train_index, ]
+bike_test <- bike[-bike_train_index, ]
+
+bike_rf = randomForest(cnt ~ ., data = bike_train)
+bike_tree = rpart(cnt ~ ., data = bike_train)
+bike_svm = e1071::svm(cnt ~ ., data = bike_train)
+bike_lm = lm(cnt ~ ., data = bike_train, x = TRUE)
+
+## Partial Dependence Plots
+
+
+
+## Accumulated Local Effects
+
+## Feature Interaction
+
+## Functional Decomposition
+
+## Permutation Feature Importance
+
+## LOFO Importance
+
+## Surrogate Models
+
+## Prototypes and Criticisms
